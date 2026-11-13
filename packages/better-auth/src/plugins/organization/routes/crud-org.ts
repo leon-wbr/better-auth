@@ -10,6 +10,7 @@ import { orgMiddleware, orgSessionMiddleware } from "../call";
 import { ORGANIZATION_ERROR_CODES } from "../error-codes";
 import {
 	canViewInvitations,
+	getCallerAccess,
 	hasPermission,
 	withoutCreatorRoleInvitations,
 } from "../has-permission";
@@ -441,11 +442,11 @@ export const updateOrganization = <O extends OrganizationOptions>(
 				);
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options);
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId,
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
@@ -456,7 +457,8 @@ export const updateOrganization = <O extends OrganizationOptions>(
 					permissions: {
 						organization: ["update"],
 					},
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					organizationId,
 				},
@@ -488,7 +490,7 @@ export const updateOrganization = <O extends OrganizationOptions>(
 					await options.organizationHooks.beforeUpdateOrganization({
 						organization: ctx.body.data,
 						user: session.user,
-						member,
+						member: access.member,
 					});
 				if (response && typeof response === "object" && "data" in response) {
 					ctx.body.data = {
@@ -505,7 +507,7 @@ export const updateOrganization = <O extends OrganizationOptions>(
 				await options.organizationHooks.afterUpdateOrganization({
 					organization: updatedOrg,
 					user: session.user,
-					member,
+					member: access.member,
 				});
 			}
 			return ctx.json(updatedOrg);
@@ -570,11 +572,11 @@ export const deleteOrganization = <O extends OrganizationOptions>(
 				);
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options);
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId,
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
@@ -582,7 +584,8 @@ export const deleteOrganization = <O extends OrganizationOptions>(
 			}
 			const canDeleteOrg = await hasPermission(
 				{
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					permissions: {
 						organization: ["delete"],
 					},
@@ -699,11 +702,15 @@ export const getOrganization = <O extends OrganizationOptions>(options: O) =>
 					ORGANIZATION_ERROR_CODES.ORGANIZATION_NOT_FOUND,
 				);
 			}
-			const isMember = await adapter.checkMembership({
-				userId: session.user.id,
-				organizationId: organization.id,
-			});
-			if (!isMember) {
+			const access = await getCallerAccess(
+				{
+					session,
+					organizationId: organization.id,
+					options: ctx.context.orgOptions,
+				},
+				ctx,
+			);
+			if (!access) {
 				await adapter.setActiveOrganization(session.session.token, null, ctx);
 				throw APIError.from(
 					"FORBIDDEN",
@@ -796,11 +803,15 @@ export const getFullOrganization = <O extends OrganizationOptions>(
 					ORGANIZATION_ERROR_CODES.ORGANIZATION_NOT_FOUND,
 				);
 			}
-			const isMember = await adapter.checkMembership({
-				userId: session.user.id,
-				organizationId: organization.id,
-			});
-			if (!isMember) {
+			const access = await getCallerAccess(
+				{
+					session,
+					organizationId: organization.id,
+					options: ctx.context.orgOptions,
+				},
+				ctx,
+			);
+			if (!access) {
 				await adapter.setActiveOrganization(session.session.token, null, ctx);
 				throw APIError.from(
 					"FORBIDDEN",
@@ -812,7 +823,8 @@ export const getFullOrganization = <O extends OrganizationOptions>(
 				organization.invitations.length > 0 &&
 				(await canViewInvitations(
 					{
-						role: isMember.role,
+						role: access.role,
+						grants: access.grants,
 						options: ctx.context.orgOptions,
 						organizationId: organization.id,
 					},
@@ -820,7 +832,7 @@ export const getFullOrganization = <O extends OrganizationOptions>(
 				));
 			organization.invitations = showInvitations
 				? withoutCreatorRoleInvitations(organization.invitations, {
-						role: isMember.role,
+						role: access.role,
 						options: ctx.context.orgOptions,
 					})
 				: [];
@@ -938,11 +950,15 @@ export const setActiveOrganization = <O extends OrganizationOptions>(
 				);
 			}
 
-			const isMember = await adapter.checkMembership({
-				userId: session.user.id,
-				organizationId,
-			});
-			if (!isMember) {
+			const access = await getCallerAccess(
+				{
+					session,
+					organizationId,
+					options: ctx.context.orgOptions,
+				},
+				ctx,
+			);
+			if (!access) {
 				await adapter.setActiveOrganization(session.session.token, null, ctx);
 				throw APIError.from(
 					"FORBIDDEN",

@@ -10,7 +10,7 @@ import { defaultRoles } from "../access/statement";
 import { getOrgAdapter } from "../adapter";
 import { orgMiddleware, orgSessionMiddleware } from "../call";
 import { ORGANIZATION_ERROR_CODES } from "../error-codes";
-import { hasPermission } from "../has-permission";
+import { getCallerAccess, hasPermission } from "../has-permission";
 import { parseRoleList, parseRoles } from "../roles";
 import type {
 	InferMember,
@@ -334,11 +334,11 @@ export const removeMember = <O extends OrganizationOptions>(options: O) =>
 				);
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options);
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId,
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.MEMBER_NOT_FOUND,
@@ -368,7 +368,7 @@ export const removeMember = <O extends OrganizationOptions>(options: O) =>
 			const creatorRole = ctx.context.orgOptions?.creatorRole || "owner";
 			const isOwner = roles.includes(creatorRole);
 			if (isOwner) {
-				if (!parseRoleList(member.role).includes(creatorRole)) {
+				if (!parseRoleList(access.role).includes(creatorRole)) {
 					throw APIError.from(
 						"BAD_REQUEST",
 						ORGANIZATION_ERROR_CODES.YOU_CANNOT_LEAVE_THE_ORGANIZATION_AS_THE_ONLY_OWNER,
@@ -389,7 +389,8 @@ export const removeMember = <O extends OrganizationOptions>(options: O) =>
 			}
 			const canDeleteMember = await hasPermission(
 				{
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					permissions: {
 						member: ["delete"],
@@ -569,12 +570,12 @@ export const updateMemberRole = <O extends OrganizationOptions>(option: O) =>
 				throw APIError.fromStatus("BAD_REQUEST");
 			}
 
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId,
-			});
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
 
-			if (!member) {
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.MEMBER_NOT_FOUND,
@@ -582,9 +583,9 @@ export const updateMemberRole = <O extends OrganizationOptions>(option: O) =>
 			}
 
 			const toBeUpdatedMember =
-				member.id !== ctx.body.memberId
-					? await adapter.findMemberById(ctx.body.memberId)
-					: member;
+				access.member?.id === ctx.body.memberId
+					? access.member
+					: await adapter.findMemberById(ctx.body.memberId);
 
 			if (!toBeUpdatedMember) {
 				throw APIError.from(
@@ -605,7 +606,7 @@ export const updateMemberRole = <O extends OrganizationOptions>(option: O) =>
 
 			const creatorRole = ctx.context.orgOptions?.creatorRole || "owner";
 
-			const updatingMemberRoles = parseRoleList(member.role);
+			const updatingMemberRoles = parseRoleList(access.role);
 			const toBeUpdatedMemberRoles = parseRoleList(toBeUpdatedMember.role);
 
 			const isUpdatingCreator = toBeUpdatedMemberRoles.includes(creatorRole);
@@ -613,7 +614,8 @@ export const updateMemberRole = <O extends OrganizationOptions>(option: O) =>
 
 			const isSettingCreatorRole = roleToSet.includes(creatorRole);
 
-			const memberIsUpdatingThemselves = member.id === toBeUpdatedMember.id;
+			const memberIsUpdatingThemselves =
+				access.member?.id === toBeUpdatedMember.id;
 
 			if (
 				(isUpdatingCreator && !updaterIsCreator) ||
@@ -648,7 +650,8 @@ export const updateMemberRole = <O extends OrganizationOptions>(option: O) =>
 
 			const canUpdateMember = await hasPermission(
 				{
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					permissions: {
 						member: ["update"],
@@ -1010,11 +1013,11 @@ export const listMembers = <O extends OrganizationOptions>(options: O) =>
 				);
 			}
 
-			const isMember = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId,
-			});
-			if (!isMember) {
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"FORBIDDEN",
 					ORGANIZATION_ERROR_CODES.YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION,

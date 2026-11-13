@@ -24,7 +24,9 @@ export const hasPermissionFn = (
 			return true;
 		}
 	}
-	return false;
+	return (input.grants ?? []).some(
+		(grant) => grant.authorize(input.permissions).success,
+	);
 };
 
 export type PermissionExclusive = {
@@ -35,4 +37,8 @@ export type HasPermissionBaseInput = {
 	role: string;
 	options: OrganizationOptions;
 	allowCreatorAllPermissions?: boolean | undefined;
+	/**
+	 * Roles of the grants that apply to the caller, from `getCallerAccess`.
+	 */
+	grants?: Role<Statements>[] | undefined;
 } & PermissionExclusive;

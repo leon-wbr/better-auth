@@ -6,10 +6,10 @@ import * as z from "zod";
 import type { InferAdditionalFieldsFromPluginOptions } from "../../../db";
 import { toZodSchema } from "../../../db";
 import type { User } from "../../../types";
-import type { AccessControl } from "../../access";
+import type { AccessControl, Role, Statements } from "../../access";
 import { orgSessionMiddleware } from "../call";
 import { ORGANIZATION_ERROR_CODES } from "../error-codes";
-import { hasPermission } from "../has-permission";
+import { getCallerAccess, hasPermission } from "../has-permission";
 import { parseRoleList } from "../roles";
 import type { Member, OrganizationRole } from "../schema";
 import type { OrganizationOptions } from "../types";
@@ -144,24 +144,11 @@ export const createOrgRole = <O extends OrganizationOptions>(options: O) => {
 
 			// Get the user's role associated with the organization.
 			// This also serves as a check to ensure the org id is valid.
-			const member = await ctx.context.adapter.findOne<Member>({
-				model: "member",
-				where: [
-					{
-						field: "organizationId",
-						value: organizationId,
-						operator: "eq",
-						connector: "AND",
-					},
-					{
-						field: "userId",
-						value: user.id,
-						operator: "eq",
-						connector: "AND",
-					},
-				],
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session: ctx.context.session, organizationId, options },
+				ctx,
+			);
+			if (!access) {
 				ctx.context.logger.error(
 					`[Dynamic Access Control] The user is not a member of the organization to create a role.`,
 					{
@@ -182,7 +169,8 @@ export const createOrgRole = <O extends OrganizationOptions>(options: O) => {
 					permissions: {
 						ac: ["create"],
 					},
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 				},
 				ctx,
 			);
@@ -192,7 +180,7 @@ export const createOrgRole = <O extends OrganizationOptions>(options: O) => {
 					{
 						userId: user.id,
 						organizationId,
-						role: member.role,
+						role: access.role,
 					},
 				);
 				throw APIError.from(
@@ -239,7 +227,7 @@ export const createOrgRole = <O extends OrganizationOptions>(options: O) => {
 
 			await checkIfMemberHasPermission({
 				ctx,
-				member,
+				access,
 				options,
 				organizationId,
 				permissionRequired: permission,
@@ -336,24 +324,11 @@ export const deleteOrgRole = <O extends OrganizationOptions>(options: O) => {
 				);
 			}
 
-			const member = await ctx.context.adapter.findOne<Member>({
-				model: "member",
-				where: [
-					{
-						field: "organizationId",
-						value: organizationId,
-						operator: "eq",
-						connector: "AND",
-					},
-					{
-						field: "userId",
-						value: user.id,
-						operator: "eq",
-						connector: "AND",
-					},
-				],
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session: ctx.context.session, organizationId, options },
+				ctx,
+			);
+			if (!access) {
 				ctx.context.logger.error(
 					`[Dynamic Access Control] The user is not a member of the organization to delete a role.`,
 					{
@@ -374,7 +349,8 @@ export const deleteOrgRole = <O extends OrganizationOptions>(options: O) => {
 					permissions: {
 						ac: ["delete"],
 					},
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 				},
 				ctx,
 			);
@@ -384,7 +360,7 @@ export const deleteOrgRole = <O extends OrganizationOptions>(options: O) => {
 					{
 						userId: user.id,
 						organizationId,
-						role: member.role,
+						role: access.role,
 					},
 				);
 				throw APIError.from(
@@ -564,24 +540,11 @@ export const listOrgRoles = <O extends OrganizationOptions>(options: O) => {
 				);
 			}
 
-			const member = await ctx.context.adapter.findOne<Member>({
-				model: "member",
-				where: [
-					{
-						field: "organizationId",
-						value: organizationId,
-						operator: "eq",
-						connector: "AND",
-					},
-					{
-						field: "userId",
-						value: user.id,
-						operator: "eq",
-						connector: "AND",
-					},
-				],
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session: ctx.context.session, organizationId, options },
+				ctx,
+			);
+			if (!access) {
 				ctx.context.logger.error(
 					`[Dynamic Access Control] The user is not a member of the organization to list roles.`,
 					{
@@ -602,7 +565,8 @@ export const listOrgRoles = <O extends OrganizationOptions>(options: O) => {
 					permissions: {
 						ac: ["read"],
 					},
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 				},
 				ctx,
 			);
@@ -612,7 +576,7 @@ export const listOrgRoles = <O extends OrganizationOptions>(options: O) => {
 					{
 						userId: user.id,
 						organizationId,
-						role: member.role,
+						role: access.role,
 					},
 				);
 				throw APIError.from(
@@ -703,24 +667,11 @@ export const getOrgRole = <O extends OrganizationOptions>(options: O) => {
 				);
 			}
 
-			const member = await ctx.context.adapter.findOne<Member>({
-				model: "member",
-				where: [
-					{
-						field: "organizationId",
-						value: organizationId,
-						operator: "eq",
-						connector: "AND",
-					},
-					{
-						field: "userId",
-						value: user.id,
-						operator: "eq",
-						connector: "AND",
-					},
-				],
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session: ctx.context.session, organizationId, options },
+				ctx,
+			);
+			if (!access) {
 				ctx.context.logger.error(
 					`[Dynamic Access Control] The user is not a member of the organization to read a role.`,
 					{
@@ -741,7 +692,8 @@ export const getOrgRole = <O extends OrganizationOptions>(options: O) => {
 					permissions: {
 						ac: ["read"],
 					},
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 				},
 				ctx,
 			);
@@ -751,7 +703,7 @@ export const getOrgRole = <O extends OrganizationOptions>(options: O) => {
 					{
 						userId: user.id,
 						organizationId,
-						role: member.role,
+						role: access.role,
 					},
 				);
 				throw APIError.from(
@@ -907,24 +859,11 @@ export const updateOrgRole = <O extends OrganizationOptions>(options: O) => {
 				);
 			}
 
-			const member = await ctx.context.adapter.findOne<Member>({
-				model: "member",
-				where: [
-					{
-						field: "organizationId",
-						value: organizationId,
-						operator: "eq",
-						connector: "AND",
-					},
-					{
-						field: "userId",
-						value: user.id,
-						operator: "eq",
-						connector: "AND",
-					},
-				],
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session: ctx.context.session, organizationId, options },
+				ctx,
+			);
+			if (!access) {
 				ctx.context.logger.error(
 					`[Dynamic Access Control] The user is not a member of the organization to update a role.`,
 					{
@@ -942,7 +881,8 @@ export const updateOrgRole = <O extends OrganizationOptions>(options: O) => {
 				{
 					options,
 					organizationId,
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					permissions: {
 						ac: ["update"],
 					},
@@ -1033,7 +973,7 @@ export const updateOrgRole = <O extends OrganizationOptions>(options: O) => {
 
 				await checkIfMemberHasPermission({
 					ctx,
-					member,
+					access,
 					options,
 					organizationId,
 					permissionRequired: newPermission,
@@ -1135,7 +1075,7 @@ async function checkIfMemberHasPermission({
 	permissionRequired: permission,
 	options,
 	organizationId,
-	member,
+	access,
 	user,
 	action,
 }: {
@@ -1143,7 +1083,7 @@ async function checkIfMemberHasPermission({
 	permissionRequired: Record<string, string[]>;
 	options: OrganizationOptions;
 	organizationId: string;
-	member: Member;
+	access: { role: string; grants: Role<Statements>[] };
 	user: User;
 	action: "create" | "update" | "delete" | "read" | "list" | "get";
 }) {
@@ -1162,7 +1102,8 @@ async function checkIfMemberHasPermission({
 						organizationId,
 						permissions: { [resource]: [perm] },
 						useMemoryCache: true,
-						role: member.role,
+						role: access.role,
+						grants: access.grants,
 					},
 					ctx,
 				),
@@ -1181,7 +1122,7 @@ async function checkIfMemberHasPermission({
 			{
 				userId: user.id,
 				organizationId,
-				role: member.role,
+				role: access.role,
 				missingPermissions,
 			},
 		);

@@ -82,6 +82,42 @@ export interface OrganizationOptions {
 		  }
 		| undefined;
 	/**
+	 * Give permissions to callers by who they are rather than by their member
+	 * role, such as platform admins or a specific user. A grant whose `when`
+	 * returns `true` adds its role's permissions in that organization, also for
+	 * callers who are not members.
+	 *
+	 * A matching grant lets the caller read the organization (set it active,
+	 * get it and list its members and teams), but doesn't make them a member:
+	 * role-based checks such as owner protections and `getActiveMember` still
+	 * need a member row. Callbacks given the caller's member, such as
+	 * `invitationLimit` and the update organization hooks, get `null` instead,
+	 * and `sendInvitationEmail` gets only `inviter.user`.
+	 *
+	 * @example
+	 * ```ts
+	 * grants: [
+	 *   {
+	 *     when: ({ user }) => user.role === "admin",
+	 *     role: ac.newRole({ organization: ["update", "delete"] }),
+	 *   },
+	 * ]
+	 * ```
+	 */
+	grants?:
+		| {
+				when: (
+					data: {
+						user: User & Record<string, any>;
+						session: Session & Record<string, any>;
+						organizationId: string;
+					},
+					ctx: GenericEndpointContext,
+				) => Awaitable<boolean>;
+				role: Role<any>;
+		  }[]
+		| undefined;
+	/**
 	 * Dynamic access control for the organization plugin.
 	 */
 	dynamicAccessControl?:
@@ -193,7 +229,7 @@ export interface OrganizationOptions {
 				data: {
 					user: User & Record<string, any>;
 					organization: Organization & Record<string, any>;
-					member: Member & Record<string, any>;
+					member: (Member & Record<string, any>) | null;
 				},
 				ctx: AuthContext,
 		  ) => Awaitable<number>)
@@ -277,7 +313,7 @@ export interface OrganizationOptions {
 					/**
 					 * the member who is inviting the user
 					 */
-					inviter: Member & {
+					inviter: Partial<Member> & {
 						user: User;
 					};
 				},
@@ -428,7 +464,7 @@ export interface OrganizationOptions {
 						[key: string]: any;
 					};
 					user: User & Record<string, any>;
-					member: Member & Record<string, any>;
+					member: (Member & Record<string, any>) | null;
 				}) => Promise<void | {
 					data: {
 						name?: string;
@@ -456,7 +492,7 @@ export interface OrganizationOptions {
 					 */
 					organization: (Organization & Record<string, any>) | null;
 					user: User & Record<string, any>;
-					member: Member & Record<string, any>;
+					member: (Member & Record<string, any>) | null;
 				}) => Promise<void>;
 				/**
 				 * A callback that runs before the organization is deleted

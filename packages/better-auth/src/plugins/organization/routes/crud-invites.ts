@@ -14,6 +14,7 @@ import { orgMiddleware, orgSessionMiddleware } from "../call";
 import { ORGANIZATION_ERROR_CODES } from "../error-codes";
 import {
 	canViewInvitations,
+	getCallerAccess,
 	hasPermission,
 	withoutCreatorRoleInvitations,
 } from "../has-permission";
@@ -22,7 +23,6 @@ import type {
 	InferInvitation,
 	InferOrganizationRolesFromOption,
 	Invitation,
-	Member,
 } from "../schema";
 import type { OrganizationOptions } from "../types";
 
@@ -255,11 +255,15 @@ export const createInvitation = <O extends OrganizationOptions>(option: O) => {
 			}
 
 			const adapter = getOrgAdapter<O>(ctx.context, option as O);
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId,
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{
+					session,
+					organizationId,
+					options: ctx.context.orgOptions,
+				},
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.MEMBER_NOT_FOUND,
@@ -267,7 +271,8 @@ export const createInvitation = <O extends OrganizationOptions>(option: O) => {
 			}
 			const canInvite = await hasPermission(
 				{
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					permissions: {
 						invitation: ["create"],
@@ -331,7 +336,7 @@ export const createInvitation = <O extends OrganizationOptions>(option: O) => {
 			}
 
 			if (
-				!parseRoleList(member.role).includes(creatorRole) &&
+				!parseRoleList(access.role).includes(creatorRole) &&
 				rolesArray.includes(creatorRole)
 			) {
 				throw APIError.from(
@@ -377,7 +382,7 @@ export const createInvitation = <O extends OrganizationOptions>(option: O) => {
 			const existingInvitation = alreadyInvited[0];
 			if (existingInvitation && ctx.body.resend) {
 				if (
-					!parseRoleList(member.role).includes(creatorRole) &&
+					!parseRoleList(access.role).includes(creatorRole) &&
 					parseRoleList(existingInvitation.role).includes(creatorRole)
 				) {
 					throw APIError.from(
@@ -420,7 +425,7 @@ export const createInvitation = <O extends OrganizationOptions>(option: O) => {
 								email: updatedInvitation.email!.toLowerCase(),
 								organization: organization,
 								inviter: {
-									...member,
+									...access.member,
 									user: session.user,
 								},
 								invitation: updatedInvitation as unknown as Invitation,
@@ -449,7 +454,7 @@ export const createInvitation = <O extends OrganizationOptions>(option: O) => {
 							{
 								user: session.user,
 								organization,
-								member: member as Member,
+								member: access.member,
 							},
 							ctx.context,
 						)
@@ -602,7 +607,7 @@ export const createInvitation = <O extends OrganizationOptions>(option: O) => {
 							email: invitation.email.toLowerCase(),
 							organization: organization,
 							inviter: {
-								...(member as Member),
+								...access.member,
 								user: session.user,
 							},
 							invitation,
@@ -1048,11 +1053,15 @@ export const cancelInvitation = <O extends OrganizationOptions>(options: O) =>
 					ORGANIZATION_ERROR_CODES.INVITATION_NOT_FOUND,
 				);
 			}
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: invitation.organizationId,
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{
+					session,
+					organizationId: invitation.organizationId,
+					options: ctx.context.orgOptions,
+				},
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.MEMBER_NOT_FOUND,
@@ -1060,7 +1069,8 @@ export const cancelInvitation = <O extends OrganizationOptions>(options: O) =>
 			}
 			const canCancel = await hasPermission(
 				{
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					permissions: {
 						invitation: ["cancel"],
@@ -1295,18 +1305,23 @@ export const listInvitations = <O extends OrganizationOptions>(options: O) =>
 				});
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options);
-			const isMember = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: orgId,
-			});
-			if (!isMember) {
+			const access = await getCallerAccess(
+				{
+					session,
+					organizationId: orgId,
+					options: ctx.context.orgOptions,
+				},
+				ctx,
+			);
+			if (!access) {
 				throw APIError.fromStatus("FORBIDDEN", {
 					message: "You are not a member of this organization",
 				});
 			}
 			const canList = await canViewInvitations(
 				{
-					role: isMember.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					organizationId: orgId,
 				},
@@ -1323,7 +1338,7 @@ export const listInvitations = <O extends OrganizationOptions>(options: O) =>
 			});
 			return ctx.json(
 				withoutCreatorRoleInvitations(invitations, {
-					role: isMember.role,
+					role: access.role,
 					options: ctx.context.orgOptions,
 				}),
 			);

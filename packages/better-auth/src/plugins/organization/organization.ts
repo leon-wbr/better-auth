@@ -9,10 +9,9 @@ import { PACKAGE_VERSION } from "../../version";
 import type { AccessControl, ArrayElement } from "../access";
 import type { defaultStatements } from "./access";
 import { defaultRoles } from "./access";
-import { getOrgAdapter } from "./adapter";
 import { orgSessionMiddleware } from "./call";
 import { ORGANIZATION_ERROR_CODES } from "./error-codes";
-import { hasPermission } from "./has-permission";
+import { getCallerAccess, hasPermission } from "./has-permission";
 import {
 	createOrgRole,
 	deleteOrgRole,
@@ -262,12 +261,15 @@ const createHasPermission = <O extends OrganizationOptions>(options: O) => {
 					ORGANIZATION_ERROR_CODES.NO_ACTIVE_ORGANIZATION,
 				);
 			}
-			const adapter = getOrgAdapter<O>(ctx.context, options);
-			const member = await adapter.findMemberByOrgId({
-				userId: ctx.context.session.user.id,
-				organizationId: activeOrganizationId,
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{
+					session: ctx.context.session,
+					organizationId: activeOrganizationId,
+					options,
+				},
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"UNAUTHORIZED",
 					ORGANIZATION_ERROR_CODES.USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
@@ -275,7 +277,8 @@ const createHasPermission = <O extends OrganizationOptions>(options: O) => {
 			}
 			const result = await hasPermission(
 				{
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					options: options,
 					permissions: ctx.body.permissions as any,
 					organizationId: activeOrganizationId,

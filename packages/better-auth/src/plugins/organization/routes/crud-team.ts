@@ -13,7 +13,7 @@ import type { PrettifyDeep } from "../../../types/helper";
 import { getOrgAdapter } from "../adapter";
 import { orgMiddleware, orgSessionMiddleware } from "../call";
 import { ORGANIZATION_ERROR_CODES } from "../error-codes";
-import { hasPermission } from "../has-permission";
+import { getCallerAccess, hasPermission } from "../has-permission";
 import type { TeamMember } from "../schema";
 import { teamSchema } from "../schema";
 import type { OrganizationOptions } from "../types";
@@ -115,11 +115,11 @@ export const createTeam = <O extends OrganizationOptions>(options: O) => {
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options as O);
 			if (session) {
-				const member = await adapter.findMemberByOrgId({
-					userId: session.user.id,
-					organizationId,
-				});
-				if (!member) {
+				const access = await getCallerAccess(
+					{ session, organizationId, options: ctx.context.orgOptions },
+					ctx,
+				);
+				if (!access) {
 					throw APIError.from(
 						"FORBIDDEN",
 						ORGANIZATION_ERROR_CODES.YOU_ARE_NOT_ALLOWED_TO_INVITE_USERS_TO_THIS_ORGANIZATION,
@@ -127,7 +127,8 @@ export const createTeam = <O extends OrganizationOptions>(options: O) => {
 				}
 				const canCreate = await hasPermission(
 					{
-						role: member.role,
+						role: access.role,
+						grants: access.grants,
 						options: ctx.context.orgOptions,
 						permissions: {
 							team: ["create"],
@@ -278,12 +279,12 @@ export const removeTeam = <O extends OrganizationOptions>(options: O) =>
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options);
 			if (session) {
-				const member = await adapter.findMemberByOrgId({
-					userId: session.user.id,
-					organizationId,
-				});
+				const access = await getCallerAccess(
+					{ session, organizationId, options: ctx.context.orgOptions },
+					ctx,
+				);
 
-				if (!member || session.session?.activeTeamId === ctx.body.teamId) {
+				if (!access || session.session?.activeTeamId === ctx.body.teamId) {
 					throw APIError.from(
 						"FORBIDDEN",
 						ORGANIZATION_ERROR_CODES.YOU_ARE_NOT_ALLOWED_TO_DELETE_THIS_TEAM,
@@ -292,7 +293,8 @@ export const removeTeam = <O extends OrganizationOptions>(options: O) =>
 
 				const canRemove = await hasPermission(
 					{
-						role: member.role,
+						role: access.role,
+						grants: access.grants,
 						options: ctx.context.orgOptions,
 						permissions: {
 							team: ["delete"],
@@ -493,12 +495,12 @@ export const updateTeam = <O extends OrganizationOptions>(options: O) => {
 				);
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options);
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId,
-			});
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
 
-			if (!member) {
+			if (!access) {
 				throw APIError.from(
 					"FORBIDDEN",
 					ORGANIZATION_ERROR_CODES.YOU_ARE_NOT_ALLOWED_TO_UPDATE_THIS_TEAM,
@@ -507,7 +509,8 @@ export const updateTeam = <O extends OrganizationOptions>(options: O) => {
 
 			const canUpdate = await hasPermission(
 				{
-					role: member.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					permissions: {
 						team: ["update"],
@@ -684,11 +687,11 @@ export const listOrganizationTeams = <O extends OrganizationOptions>(
 				);
 			}
 			const adapter = getOrgAdapter<O>(ctx.context, options);
-			const member = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId || "",
-			});
-			if (!member) {
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
+			if (!access) {
 				throw APIError.from(
 					"FORBIDDEN",
 					ORGANIZATION_ERROR_CODES.YOU_ARE_NOT_ALLOWED_TO_ACCESS_THIS_ORGANIZATION,
@@ -886,12 +889,12 @@ export const listUserTeams = <O extends OrganizationOptions>(options: O) =>
 					);
 				}
 
-				const requesterMember = await adapter.findMemberByOrgId({
-					userId: session.user.id,
-					organizationId,
-				});
+				const access = await getCallerAccess(
+					{ session, organizationId, options: ctx.context.orgOptions },
+					ctx,
+				);
 
-				if (!requesterMember) {
+				if (!access) {
 					throw APIError.from(
 						"FORBIDDEN",
 						ORGANIZATION_ERROR_CODES.YOU_ARE_NOT_A_MEMBER_OF_THIS_ORGANIZATION,
@@ -904,7 +907,8 @@ export const listUserTeams = <O extends OrganizationOptions>(options: O) =>
 				// member's team affiliations.
 				const canManageMembers = await hasPermission(
 					{
-						role: requesterMember.role,
+						role: access.role,
+						grants: access.grants,
 						options: ctx.context.orgOptions,
 						permissions: { member: ["update"] },
 						organizationId,
@@ -1187,12 +1191,12 @@ export const addTeamMember = <O extends OrganizationOptions>(options: O) =>
 				);
 			}
 
-			const currentMember = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId,
-			});
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
 
-			if (!currentMember) {
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
@@ -1201,7 +1205,8 @@ export const addTeamMember = <O extends OrganizationOptions>(options: O) =>
 
 			const canUpdateMember = await hasPermission(
 				{
-					role: currentMember.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					permissions: {
 						member: ["update"],
@@ -1389,12 +1394,12 @@ export const removeTeamMember = <O extends OrganizationOptions>(options: O) =>
 				);
 			}
 
-			const currentMember = await adapter.findMemberByOrgId({
-				userId: session.user.id,
-				organizationId: organizationId,
-			});
+			const access = await getCallerAccess(
+				{ session, organizationId, options: ctx.context.orgOptions },
+				ctx,
+			);
 
-			if (!currentMember) {
+			if (!access) {
 				throw APIError.from(
 					"BAD_REQUEST",
 					ORGANIZATION_ERROR_CODES.USER_IS_NOT_A_MEMBER_OF_THE_ORGANIZATION,
@@ -1403,7 +1408,8 @@ export const removeTeamMember = <O extends OrganizationOptions>(options: O) =>
 
 			const canDeleteMember = await hasPermission(
 				{
-					role: currentMember.role,
+					role: access.role,
+					grants: access.grants,
 					options: ctx.context.orgOptions,
 					permissions: {
 						member: ["delete"],

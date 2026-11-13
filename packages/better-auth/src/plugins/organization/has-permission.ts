@@ -2,7 +2,10 @@ import type { GenericEndpointContext } from "@better-auth/core";
 import { defineRequestState, hasRequestState } from "@better-auth/core/context";
 import * as z from "zod";
 import { APIError } from "../../api";
+import type { Session, User } from "../../types";
+import type { Role, Statements } from "../access";
 import { defaultRoles } from "./access";
+import { getOrgAdapter } from "./adapter";
 import type { HasPermissionBaseInput } from "./permission";
 import { hasPermissionFn } from "./permission";
 import { parseRoleList } from "./roles";
@@ -114,6 +117,35 @@ export const hasPermission = async (
 };
 
 /**
+ * The caller's access to an organization: their member row, if any, and the
+ * roles of the `grants` that apply to them. `null` when they have neither.
+ * Pass `role` and `grants` to `hasPermission`.
+ */
+export const getCallerAccess = async (
+	input: {
+		session: { session: Session; user: User };
+		organizationId: string;
+		options: HasPermissionBaseInput["options"];
+	},
+	ctx: GenericEndpointContext,
+) => {
+	const { session, user } = input.session;
+	const { organizationId, options } = input;
+	const member = await getOrgAdapter(ctx.context, options).findMemberByOrgId({
+		userId: user.id,
+		organizationId,
+	});
+	const grants: Role<Statements>[] = [];
+	for (const grant of options.grants ?? []) {
+		if (await grant.when({ user, session, organizationId }, ctx)) {
+			grants.push(grant.role);
+		}
+	}
+	if (!member && !grants.length) return null;
+	return { member, role: member?.role ?? "", grants };
+};
+
+/**
  * Whether a member may see the organization's pending invitations.
  *
  * Invitation ids act as invitation links. Members who can create invitations
@@ -123,7 +155,7 @@ export const hasPermission = async (
 export const canViewInvitations = (
 	input: Pick<
 		Parameters<typeof hasPermission>[0],
-		"organizationId" | "role" | "options"
+		"organizationId" | "role" | "grants" | "options"
 	>,
 	ctx: GenericEndpointContext,
 ) =>

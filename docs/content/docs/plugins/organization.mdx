@@ -1469,6 +1469,48 @@ const canCreateProjectAndCreateSale =
   Please use the [hasPermission](#access-control-usage) APIs to include checks for any dynamic roles & permissions.
 </Callout>
 
+### Grants
+
+Roles describe what a member may do. Grants give permissions based on who the caller is instead, such as platform admins or one specific user, in organizations they may not be a member of. Each grant pairs a `when` check with a role made by your access control instance, so its permissions are typed by your statements.
+
+```ts title="auth.ts"
+import { betterAuth } from "better-auth";
+import { admin, organization } from "better-auth/plugins";
+import { ac, owner, admin as orgAdmin, member } from "./permissions";
+
+export const auth = betterAuth({
+  plugins: [
+    admin(),
+    organization({
+      ac,
+      roles: { owner, admin: orgAdmin, member },
+      grants: [
+        {
+          // Platform admins may update and delete any organization.
+          when: ({ user }) => user.role === "admin",
+          role: ac.newRole({ organization: ["update", "delete"] }),
+        },
+        {
+          // One user may invite people to one organization.
+          when: ({ user, organizationId }) =>
+            user.id === "support-user-id" && organizationId === "org-id",
+          role: ac.newRole({ invitation: ["create"] }),
+        },
+      ],
+    }),
+  ],
+});
+```
+
+`when` receives the signed-in `user`, their `session` and the `organizationId` being accessed, plus the endpoint context, and may be async. Grants apply to every permission check, including `hasPermission`:
+
+* A matching grant adds its role's permissions to the caller's own. A member keeps their role's permissions, and a non-member gets only the grant's.
+* Any matching grant lets the caller read the organization: set it active, get it, and list its members and teams.
+* A grant isn't a membership. `getActiveMember`, `getActiveMemberRole` and `leaveOrganization` still need a member row, and checks that compare role names, such as the creator role's protections, treat a non-member as having no role. A grant-only caller can't invite with or assign the creator role.
+* Callbacks that receive the caller's member, `invitationLimit` and the `beforeUpdateOrganization`/`afterUpdateOrganization` hooks, get `member: null` for a grant-only caller, and `sendInvitationEmail` gets an `inviter` with only `user` set.
+* `getInvitation` still refuses invitations whose inviter isn't a member, so an invitation sent through a grant can be accepted but not looked up with it.
+* Dynamic roles aren't applied to grants: a grant has exactly the permissions of its role.
+
 ***
 
 ## Dynamic Access Control
